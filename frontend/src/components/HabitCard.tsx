@@ -4,7 +4,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { FiCheckCircle, FiCircle, FiMoreVertical } from 'react-icons/fi';
-import { CheckCircle2, Ruler, Clock } from 'lucide-react';
+import { CheckCircle2, Ruler, Clock, LogIn } from 'lucide-react';
 import type { Habit } from '@/types';
 import { HABIT_COLORS } from '@/types';
 import { repetitionsApi } from '@/services/repetitions';
@@ -15,6 +15,7 @@ interface HabitCardProps {
   onToggle?: () => void;
   onDelete?: () => void;
   onArchive?: () => void;
+  onCheckIn?: () => void;
 }
 
 const habitTypeIcons = {
@@ -23,7 +24,7 @@ const habitTypeIcons = {
   duration: <Clock className="w-4 h-4" />,
 };
 
-const HabitCard: React.FC<HabitCardProps> = ({ habit, onToggle, onDelete, onArchive }) => {
+const HabitCard: React.FC<HabitCardProps> = ({ habit, onToggle, onDelete, onArchive, onCheckIn }) => {
   const [checked, setChecked] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
   const [showMenu, setShowMenu] = React.useState(false);
@@ -124,20 +125,33 @@ const HabitCard: React.FC<HabitCardProps> = ({ habit, onToggle, onDelete, onArch
             <div className="text-xs text-gray-500 dark:text-gray-400">
               {checked ? '✓ Completed today' : 'Not completed yet'}
             </div>
-            <button
-              onClick={handleToggle}
-              disabled={loading}
-              className="transition-transform hover:scale-110 disabled:opacity-50"
-            >
-              {checked ? (
-                <FiCheckCircle
-                  className="w-7 h-7"
-                  style={{ color: habitColor }}
-                />
-              ) : (
-                <FiCircle className="w-7 h-7 text-gray-300 dark:text-gray-600" />
-              )}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onCheckIn?.();
+                }}
+                className="px-3 py-1.5 text-xs font-medium rounded-md bg-blue-100 hover:bg-blue-200 text-blue-700 dark:bg-blue-900 dark:hover:bg-blue-800 dark:text-blue-100 transition-colors flex items-center gap-1"
+              >
+                <LogIn className="w-3.5 h-3.5" />
+                Log
+              </button>
+              <button
+                onClick={handleToggle}
+                disabled={loading}
+                className="transition-transform hover:scale-110 disabled:opacity-50"
+              >
+                {checked ? (
+                  <FiCheckCircle
+                    className="w-7 h-7"
+                    style={{ color: habitColor }}
+                  />
+                ) : (
+                  <FiCircle className="w-7 h-7 text-gray-300 dark:text-gray-600" />
+                )}
+              </button>
+            </div>
           </div>
         </div>
       </div>

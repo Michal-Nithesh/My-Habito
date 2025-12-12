@@ -1,11 +1,14 @@
 import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { Plus, CheckCircle2, Circle, TrendingUp, Target, MoreVertical, Trash2, Archive } from "lucide-react"
+import { Plus, CheckCircle2, Circle, TrendingUp, Target, MoreVertical, Trash2, Archive, ChevronLeft, ChevronRight } from "lucide-react"
 import { useHabitsStore } from "@/stores/habitsStore"
 import { CreateHabitDialog } from "@/components/CreateHabitDialog"
+import { HabitCheckInDialog } from "@/components/HabitCheckInDialog"
 import { repetitionsApi } from "@/services/repetitions"
+import { Habit, Repetition } from "@/types"
 import toast from "react-hot-toast"
+import { format, subDays, isToday } from "date-fns"
 
 // Color palette mapping (index to hex color)
 const colorPalette = [
@@ -18,31 +21,84 @@ const colorPalette = [
 export default function DashboardPage() {
   const { habits, loading, fetchHabits, deleteHabit, archiveHabit } = useHabitsStore()
   const [todayCompletions, setTodayCompletions] = useState<Set<string>>(new Set())
+  const [allRepetitions, setAllRepetitions] = useState<Repetition[]>([])
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
+  const [checkInDialogOpen, setCheckInDialogOpen] = useState(false)
+  const [selectedHabitForCheckIn, setSelectedHabitForCheckIn] = useState<Habit | null>(null)
   const [togglingHabit, setTogglingHabit] = useState<string | null>(null)
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [archivingId, setArchivingId] = useState<string | null>(null)
+  const [dateOffset, setDateOffset] = useState(0)
+  
+  // Generate array of 10 dates starting from dateOffset
+  const getDatesArray = () => {
+    const dates = []
+    for (let i = 9; i >= 0; i--) {
+      dates.push(subDays(new Date(), i + Math.abs(dateOffset)))
+    }
+    return dates
+  }
+
+  const displayDates = getDatesArray()
 
   useEffect(() => {
     const loadData = async () => {
       await fetchHabits()
-      await fetchTodayCompletions()
+      await fetchRepetitionsForDates()
     }
     loadData()
-  }, [fetchHabits])
+  }, [fetchHabits, dateOffset])
 
-  const fetchTodayCompletions = async () => {
+  const fetchRepetitionsForDates = async () => {
     try {
+      const startDate = displayDates[0]
+      const endDate = displayDates[displayDates.length - 1]
+      
       const repetitions = await repetitionsApi.getAll({
-        start_date: new Date().toISOString().split('T')[0],
-        end_date: new Date().toISOString().split('T')[0],
+        start_date: format(startDate, 'yyyy-MM-dd'),
+        end_date: format(endDate, 'yyyy-MM-dd'),
       })
-      const completedHabitIds = new Set(repetitions.map(r => r.habit_id))
+      setAllRepetitions(repetitions)
+
+      // Update today completions
+      const todayReps = repetitions.filter(r => isToday(new Date(r.date)))
+      const completedHabitIds = new Set(todayReps.filter(r => r.status === 'completed').map(r => r.habit_id))
       setTodayCompletions(completedHabitIds)
     } catch (error) {
-      console.error("Failed to fetch today's completions:", error)
+      console.error("Failed to fetch repetitions:", error)
     }
+  }
+
+  // Get repetition for a specific habit and date
+  const getRepetitionForDate = (habitId: string, date: Date) => {
+    return allRepetitions.find(
+      r => r.habit_id === habitId && 
+      format(new Date(r.date), 'yyyy-MM-dd') === format(date, 'yyyy-MM-dd')
+    )
+  }
+
+  // Get status display for a repetition
+  const getStatusDisplay = (rep: Repetition | undefined, habit: Habit) => {
+    if (!rep) return { icon: '—', color: 'text-gray-300' }
+    
+    if (rep.status === 'completed') {
+      if (habit.habit_type === 'numerical' && rep.value) {
+        return { icon: rep.value.toString(), color: 'text-green-600 font-bold' }
+      }
+      return { icon: '✓', color: 'text-green-600 font-bold' }
+    } else if (rep.status === 'skipped') {
+      return { icon: '✗', color: 'text-gray-400' }
+    } else if (rep.status === 'failed') {
+      return { icon: '✗', color: 'text-red-500' }
+    } else if (rep.status === 'partial') {
+      if (habit.habit_type === 'numerical' && rep.value) {
+        return { icon: rep.value.toString(), color: 'text-yellow-600 font-bold' }
+      }
+      return { icon: '◐', color: 'text-yellow-600' }
+    }
+    
+    return { icon: '—', color: 'text-gray-300' }
   }
 
   const handleToggle = async (habitId: string) => {
@@ -50,7 +106,6 @@ export default function DashboardPage() {
     try {
       await repetitionsApi.toggleToday(habitId)
       
-      // Update local state
       const newCompletions = new Set(todayCompletions)
       if (newCompletions.has(habitId)) {
         newCompletions.delete(habitId)
@@ -96,93 +151,192 @@ export default function DashboardPage() {
     }
   }
 
-  const completedToday = todayCompletions.size
-  const longestStreak = 0 // TODO: Calculate from streaks data
+  const handleOpenCheckIn = (habit: Habit) => {
+    setSelectedHabitForCheckIn(habit)
+    setCheckInDialogOpen(true)
+  }
+
+  const handleCheckInSubmit = async (data: {
+    habit_id: string
+    status: 'completed' | 'skipped' | 'failed' | 'partial'
+    value: number
+    completion_time?: string
+    notes?: string
+  }) => {
+    try {
+      await repetitionsApi.create({
+        habit_id: data.habit_id,
+        status: data.status,
+        value: data.value,
+        completion_time: data.completion_time,
+        notes: data.notes,
+      })
+      await fetchRepetitionsForDates()
+    } catch (error) {
+      console.error("Error submitting check-in:", error)
+      throw error
+    }
+  }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100">
       {/* Create Habit Dialog */}
       <CreateHabitDialog open={createDialogOpen} onOpenChange={setCreateDialogOpen} />
+
+      {/* Check-In Dialog */}
+      <HabitCheckInDialog
+        habit={selectedHabitForCheckIn}
+        open={checkInDialogOpen}
+        onOpenChange={setCheckInDialogOpen}
+        onSubmit={handleCheckInSubmit}
+      />
+
+      {/* Header */}
+      <div className="sticky top-0 z-40 bg-white border-b border-gray-200 shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <div className="flex justify-between items-center">
+            <h1 className="text-3xl font-bold text-gray-900">Habits</h1>
+            <div className="flex gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-gray-600 hover:bg-gray-100"
+                title="Sort"
+              >
+                ⬍
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-gray-600 hover:bg-gray-100"
+                title="Menu"
+              >
+                ⋯
+              </Button>
+              <Button 
+                className="bg-blue-500 hover:bg-blue-600 text-white shadow-md"
+                onClick={() => setCreateDialogOpen(true)}
+                title="Add new habit"
+              >
+                <Plus className="w-5 h-5" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-          <Card className="border-l-4 border-l-[#16A34A]">
+          <Card className="border-l-4 border-l-green-500 bg-white shadow-md">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground mb-1">Total Habits</p>
-                  <p className="text-3xl font-bold text-foreground">{habits.length}</p>
+                  <p className="text-sm text-gray-600 mb-1">Total Habits</p>
+                  <p className="text-3xl font-bold text-gray-900">{habits.length}</p>
                 </div>
-                <Target className="w-10 h-10 text-[#16A34A]" />
+                <Target className="w-10 h-10 text-green-500" />
               </div>
             </CardContent>
           </Card>
 
-          <Card className="border-l-4 border-l-[#3B82F6]">
+          <Card className="border-l-4 border-l-blue-500 bg-white shadow-md">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground mb-1">Completed Today</p>
-                  <p className="text-3xl font-bold text-foreground">
-                    {completedToday}/{habits.length}
+                  <p className="text-sm text-gray-600 mb-1">Completed Today</p>
+                  <p className="text-3xl font-bold text-gray-900">
+                    {todayCompletions.size}/{habits.length}
                   </p>
                 </div>
-                <CheckCircle2 className="w-10 h-10 text-[#3B82F6]" />
+                <CheckCircle2 className="w-10 h-10 text-blue-500" />
               </div>
             </CardContent>
           </Card>
 
-          <Card className="border-l-4 border-l-[#8B5CF6]">
+          <Card className="border-l-4 border-l-purple-500 bg-white shadow-md">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground mb-1">Longest Streak</p>
-                  <p className="text-3xl font-bold text-foreground">{longestStreak} days</p>
+                  <p className="text-sm text-gray-600 mb-1">Longest Streak</p>
+                  <p className="text-3xl font-bold text-gray-900">0 days</p>
                 </div>
-                <TrendingUp className="w-10 h-10 text-[#8B5CF6]" />
+                <TrendingUp className="w-10 h-10 text-purple-500" />
               </div>
             </CardContent>
           </Card>
         </div>
 
-        {/* Header with Add Button */}
-        <div className="flex justify-between items-center mb-6">
-          <div>
-            <h2 className="text-3xl font-bold text-foreground mb-2">My Habits</h2>
-            <p className="text-muted-foreground">Track your daily habits and build consistency</p>
+        {/* Date Navigation */}
+        {!loading && habits.length > 0 && (
+          <div className="flex items-center justify-between mb-6">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setDateOffset(dateOffset + 1)}
+              className="border-gray-300"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </Button>
+            <h2 className="text-lg font-semibold text-gray-900">
+              {format(displayDates[0], 'MMM d')} – {format(displayDates[displayDates.length - 1], 'MMM d, yyyy')}
+            </h2>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setDateOffset(Math.max(0, dateOffset - 1))}
+              disabled={dateOffset === 0}
+              className="border-gray-300"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </Button>
           </div>
+        )}
 
-          <Button 
-            className="bg-[#16A34A] hover:bg-[#15803D] text-white shadow-habito hover:shadow-habito-lg transition-all"
-            onClick={() => setCreateDialogOpen(true)}
-          >
-            <Plus className="w-5 h-5 mr-2" />
-            New Habit
-          </Button>
-        </div>
+        {/* Date Row */}
+        {!loading && habits.length > 0 && (
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-6 overflow-x-auto">
+            <div className="flex gap-3 min-w-max">
+              {displayDates.map((date) => (
+                <div
+                  key={format(date, 'yyyy-MM-dd')}
+                  className={`flex flex-col items-center justify-center min-w-[70px] p-3 rounded-lg transition-all ${
+                    isToday(date)
+                      ? 'bg-blue-500 text-white shadow-md'
+                      : 'bg-gray-50 text-gray-700 hover:bg-gray-100'
+                  }`}
+                >
+                  <div className="text-xs font-semibold tracking-wide opacity-80">
+                    {format(date, 'EEE').toUpperCase()}
+                  </div>
+                  <div className="text-lg font-bold mt-1">{format(date, 'd')}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Loading State */}
         {loading && (
           <div className="flex justify-center items-center py-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#16A34A]"></div>
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
           </div>
         )}
 
         {/* Empty State */}
         {!loading && habits.length === 0 && (
-          <Card className="border-2 border-dashed border-border">
+          <Card className="border-2 border-dashed border-gray-300 bg-white">
             <CardContent className="flex flex-col items-center justify-center py-12">
-              <div className="w-16 h-16 bg-[#16A34A]/10 rounded-full flex items-center justify-center mb-4">
-                <Target className="w-8 h-8 text-[#16A34A]" />
+              <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-4">
+                <Target className="w-8 h-8 text-blue-500" />
               </div>
-              <h3 className="text-xl font-semibold text-foreground mb-2">No habits yet</h3>
-              <p className="text-muted-foreground text-center mb-6 max-w-md">
-                Start building better habits today! Click the "New Habit" button to create your first habit.
+              <h3 className="text-xl font-semibold text-gray-900 mb-2">No habits yet</h3>
+              <p className="text-gray-600 text-center mb-6 max-w-md">
+                Start building better habits today! Click the "+" button to create your first habit.
               </p>
               <Button 
-                className="bg-[#16A34A] hover:bg-[#15803D] text-white"
+                className="bg-blue-500 hover:bg-blue-600 text-white"
                 onClick={() => setCreateDialogOpen(true)}
               >
                 <Plus className="w-5 h-5 mr-2" />
@@ -192,80 +346,113 @@ export default function DashboardPage() {
           </Card>
         )}
 
-        {/* Habits Grid */}
+        {/* Habits List - Loop Tracker Style */}
         {!loading && habits.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="space-y-3">
             {habits.map((habit) => {
-              const habitColor = colorPalette[habit.color % colorPalette.length] || '#16A34A'
+              const habitColor = colorPalette[habit.color % colorPalette.length] || '#3B82F6'
               const isCompleted = todayCompletions.has(habit.id)
               
               return (
-                <Card
+                <div
                   key={habit.id}
-                  className="hover:shadow-habito transition-shadow"
-                  style={{ borderLeft: `4px solid ${habitColor}` }}
+                  className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 hover:shadow-md hover:border-gray-300 transition-all"
                 >
-                  <CardContent className="p-6">
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="flex-1 min-w-0">
-                        <h3 className="text-lg font-semibold text-foreground mb-1 truncate">{habit.name}</h3>
-                        {habit.description && <p className="text-sm text-muted-foreground truncate">{habit.description}</p>}
-                      </div>
+                  <div className="flex items-start gap-4">
+                    {/* Habit Status Circle */}
+                    <div className="flex-shrink-0">
+                      <button
+                        onClick={() => handleToggle(habit.id)}
+                        disabled={togglingHabit === habit.id}
+                        className="transition-transform hover:scale-110 disabled:opacity-50"
+                        title={isCompleted ? "Mark incomplete" : "Mark complete"}
+                      >
+                        {isCompleted ? (
+                          <CheckCircle2 className="w-10 h-10" style={{ color: habitColor }} />
+                        ) : (
+                          <Circle className="w-10 h-10 text-gray-300" />
+                        )}
+                      </button>
+                    </div>
 
-                      <div className="flex items-center gap-2 ml-4 flex-shrink-0">
-                        <button
-                          onClick={() => handleToggle(habit.id)}
-                          disabled={togglingHabit === habit.id}
-                          className="transition-transform hover:scale-110 disabled:opacity-50"
-                        >
-                          {isCompleted ? (
-                            <CheckCircle2 className="w-8 h-8 text-[#16A34A]" />
-                          ) : (
-                            <Circle className="w-8 h-8 text-muted-foreground" />
+                    {/* Habit Info and Status Row */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-4 mb-3">
+                        <div>
+                          <h3 className="text-base font-semibold text-gray-900">{habit.name}</h3>
+                          {habit.description && (
+                            <p className="text-sm text-gray-600 mt-1">{habit.description}</p>
                           )}
-                        </button>
+                        </div>
                         
-                        <div className="relative">
+                        {/* Menu Button */}
+                        <div className="relative flex-shrink-0">
                           <button
                             onClick={() => setOpenMenuId(openMenuId === habit.id ? null : habit.id)}
-                            className="p-1 hover:bg-muted rounded-md transition-colors"
+                            className="p-1 hover:bg-gray-100 rounded-md transition-colors"
                             title="More options"
                           >
-                            <MoreVertical className="w-5 h-5 text-muted-foreground" />
+                            <MoreVertical className="w-5 h-5 text-gray-500" />
                           </button>
 
                           {openMenuId === habit.id && (
-                            <div className="absolute right-0 mt-1 w-48 bg-background border border-border rounded-md shadow-lg z-10">
+                            <div className="absolute right-0 mt-1 w-48 bg-white border border-gray-300 rounded-md shadow-lg z-10">
+                              <button
+                                onClick={() => handleOpenCheckIn(habit)}
+                                className="w-full px-4 py-2 text-left text-sm hover:bg-blue-50 text-blue-600 font-medium transition-colors"
+                              >
+                                Log Entry
+                              </button>
                               <button
                                 onClick={() => handleArchive(habit.id)}
                                 disabled={archivingId === habit.id}
-                                className="w-full px-4 py-2 text-left text-sm hover:bg-muted flex items-center gap-2 transition-colors disabled:opacity-50"
+                                className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2 transition-colors disabled:opacity-50 border-t border-gray-200"
                               >
                                 <Archive className="w-4 h-4" />
-                                Archive Habit
+                                Archive
                               </button>
                               <button
                                 onClick={() => handleDelete(habit.id)}
                                 disabled={deletingId === habit.id}
-                                className="w-full px-4 py-2 text-left text-sm hover:bg-destructive/10 text-destructive flex items-center gap-2 transition-colors disabled:opacity-50 border-t border-border"
+                                className="w-full px-4 py-2 text-left text-sm hover:bg-red-50 text-red-600 flex items-center gap-2 transition-colors disabled:opacity-50 border-t border-gray-200"
                               >
                                 <Trash2 className="w-4 h-4" />
-                                Delete Habit
+                                Delete
                               </button>
                             </div>
                           )}
                         </div>
                       </div>
-                    </div>
 
-                    <div className="flex items-center gap-2 text-sm">
-                      <TrendingUp className="w-4 h-4 text-[#16A34A]" />
-                      <span className="text-muted-foreground">
-                        <span className="font-semibold text-foreground">0</span> day streak
-                      </span>
+                      {/* Daily Status Row */}
+                      <div className="flex gap-2 overflow-x-auto pb-2">
+                        {displayDates.map((date) => {
+                          const rep = getRepetitionForDate(habit.id, date)
+                          const { icon, color } = getStatusDisplay(rep, habit)
+                          
+                          return (
+                            <button
+                              key={format(date, 'yyyy-MM-dd')}
+                              onClick={() => handleOpenCheckIn(habit)}
+                              className={`flex-shrink-0 w-12 h-12 rounded-lg flex items-center justify-center text-sm font-semibold transition-all border ${
+                                rep?.status === 'completed'
+                                  ? 'bg-green-50 border-green-300'
+                                  : rep?.status === 'skipped' || rep?.status === 'failed'
+                                  ? 'bg-gray-50 border-gray-300'
+                                  : rep?.status === 'partial'
+                                  ? 'bg-yellow-50 border-yellow-300'
+                                  : 'bg-gray-50 border-gray-300 hover:border-gray-400'
+                              } ${color}`}
+                              title={`${format(date, 'MMM d')}: ${rep?.notes || 'No entry'}`}
+                            >
+                              {icon}
+                            </button>
+                          )
+                        })}
+                      </div>
                     </div>
-                  </CardContent>
-                </Card>
+                  </div>
+                </div>
               )
             })}
           </div>

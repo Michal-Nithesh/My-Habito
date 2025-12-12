@@ -2,7 +2,7 @@
 Main API Router
 """
 from fastapi import APIRouter
-from app.api.v1 import habits, repetitions, streaks, scores, statistics, export_data
+from app.api.v1 import habits, repetitions, streaks, scores, statistics, export_data, reminders
 
 api_router = APIRouter()
 
@@ -41,4 +41,10 @@ api_router.include_router(
     export_data.router,
     prefix="/v1/export",
     tags=["export"]
+)
+
+api_router.include_router(
+    reminders.router,
+    prefix="/v1/reminders",
+    tags=["reminders"]
 )

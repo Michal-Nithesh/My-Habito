@@ -73,7 +73,9 @@ export interface Repetition {
   user_id: string;
   timestamp: number;
   date: string;
+  status: 'completed' | 'skipped' | 'failed' | 'partial';
   value: number;
+  completion_time?: string;
   notes?: string;
   created_at: string;
   updated_at: string;
@@ -83,7 +85,9 @@ export interface RepetitionCreate {
   habit_id: string;
   timestamp?: number;
   date?: string;
-  value: number;
+  status?: 'completed' | 'skipped' | 'failed' | 'partial';
+  value?: number;
+  completion_time?: string;
   notes?: string;
 }
 
@@ -146,6 +150,51 @@ export interface OverviewStatistics {
   average_completion_rate: number;
 }
 
+export interface CalendarHeatmapData {
+  date: string;
+  count: number;
+  level: number;
+}
+
+export interface WeeklyChartData {
+  week_label: string;
+  completed: number;
+  target: number;
+  completion_rate: number;
+}
+
+export interface MonthlyChartData {
+  month_label: string;
+  completed: number;
+  target: number;
+  completion_rate: number;
+}
+
+export interface TrendData {
+  period: string;
+  consistency_score: number;
+  improvement_rate: number;
+  average_completion_rate: number;
+  best_day_of_week?: string;
+  worst_day_of_week?: string;
+}
+
+export interface DetailedHabitStatistics {
+  habit_id: string;
+  habit_name: string;
+  total_repetitions: number;
+  completion_rate: number;
+  current_streak: number;
+  best_streak: number;
+  average_value?: number;
+  last_completion?: string;
+  total_days_tracked: number;
+  weekly_data: WeeklyChartData[];
+  monthly_data: MonthlyChartData[];
+  calendar_heatmap: CalendarHeatmapData[];
+  trend_data?: TrendData;
+}
+
 // Color palette (matching Loop Habit Tracker)
 export const HABIT_COLORS = [
   '#D32F2F', // Red
@@ -181,3 +230,51 @@ export const WEEKDAY_NAMES_FULL = [
   'Friday',
   'Saturday',
 ];
+
+export interface Reminder {
+  id: string;
+  habit_id: string;
+  user_id: string;
+  reminder_time: string;
+  days_of_week: number;
+  message?: string;
+  is_enabled: boolean;
+  is_smart: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ReminderCreate {
+  habit_id: string;
+  reminder_time: string;
+  days_of_week?: number;
+  message?: string;
+  is_enabled?: boolean;
+  is_smart?: boolean;
+}
+
+export interface NotificationPreferences {
+  user_id: string;
+  notifications_enabled: boolean;
+  daily_summary_enabled: boolean;
+  daily_summary_time: string;
+  smart_reminders_enabled: boolean;
+  smart_reminder_time: string;
+  push_enabled: boolean;
+  email_enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NotificationHistory {
+  id: string;
+  user_id: string;
+  habit_id?: string;
+  reminder_id?: string;
+  notification_type: string;
+  title: string;
+  body: string;
+  sent_at: string;
+  was_read: boolean;
+  read_at?: string;
+}

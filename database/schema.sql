@@ -78,8 +78,14 @@ CREATE TABLE IF NOT EXISTS public.repetitions (
     timestamp BIGINT NOT NULL, -- Unix timestamp (milliseconds since epoch)
     date DATE NOT NULL, -- Date for easier querying
     
-    -- Value
-    value INTEGER NOT NULL DEFAULT 1, -- 1 for boolean habits, actual value for numerical
+    -- Status
+    status VARCHAR(20) NOT NULL DEFAULT 'completed', -- 'completed', 'skipped', 'failed', 'partial'
+    
+    -- Value (quantity for partial/numerical habits)
+    value INTEGER NOT NULL DEFAULT 1, -- 1 for boolean habits, actual value for numerical/partial
+    
+    -- Completion time (optional, in HH:MM format)
+    completion_time TIME,
     
     -- Notes
     notes TEXT,

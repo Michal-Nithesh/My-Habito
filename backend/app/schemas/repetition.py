@@ -3,7 +3,7 @@ Pydantic schemas for Repetitions
 """
 from pydantic import BaseModel, Field, validator
 from typing import Optional
-from datetime import datetime, date
+from datetime import datetime, date, time
 from uuid import UUID
 
 class RepetitionBase(BaseModel):
@@ -11,7 +11,9 @@ class RepetitionBase(BaseModel):
     habit_id: UUID
     timestamp: int = Field(..., description="Unix timestamp in milliseconds")
     date: date
+    status: str = Field("completed", description="Status: 'completed', 'skipped', 'failed', 'partial'")
     value: int = Field(1, ge=0)
+    completion_time: Optional[time] = None
     notes: Optional[str] = None
 
 class RepetitionCreate(BaseModel):
@@ -19,8 +21,18 @@ class RepetitionCreate(BaseModel):
     habit_id: UUID
     timestamp: Optional[int] = None  # Will be auto-generated if not provided
     date: Optional[date] = None  # Will be auto-generated if not provided
+    status: str = Field("completed", description="Status: 'completed', 'skipped', 'failed', 'partial'")
     value: int = Field(1, ge=0)
+    completion_time: Optional[time] = None
     notes: Optional[str] = None
+
+    @validator('status')
+    def validate_status(cls, v):
+        """Validate status value"""
+        valid_statuses = ['completed', 'skipped', 'failed', 'partial']
+        if v not in valid_statuses:
+            raise ValueError(f"Status must be one of {valid_statuses}")
+        return v
 
     @validator('timestamp', always=True)
     def set_timestamp(cls, v):
@@ -39,8 +51,19 @@ class RepetitionCreate(BaseModel):
 
 class RepetitionUpdate(BaseModel):
     """Schema for updating a repetition"""
+    status: Optional[str] = None
     value: Optional[int] = Field(None, ge=0)
+    completion_time: Optional[time] = None
     notes: Optional[str] = None
+
+    @validator('status')
+    def validate_status(cls, v):
+        """Validate status value"""
+        if v is not None:
+            valid_statuses = ['completed', 'skipped', 'failed', 'partial']
+            if v not in valid_statuses:
+                raise ValueError(f"Status must be one of {valid_statuses}")
+        return v
 
 class RepetitionResponse(RepetitionBase):
     """Schema for repetition response"""
